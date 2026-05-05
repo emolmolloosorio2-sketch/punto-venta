@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bodega POS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161922;
+    --surface2: #1e2230;
+    --border: #2a2f42;
+    --text: #e8eaf0;
+    --muted: #5a6080;
+    --green: #2ecc71;
+    --purple: #9b59b6;
+    --amber: #f39c12;
+    --red: #e74c3c;
+    --blue: #3498db;
+    --accent: #00d4aa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  /* LOGIN */
+  .login-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 0%, #1a2a3a 0%, var(--bg) 70%);
+  }
+  .login-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 48px 40px; width: 340px; text-align: center;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  }
+  .login-logo { font-size: 48px; margin-bottom: 8px; }
+  .login-title { font-size: 22px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+  .login-sub { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
+  .pin-display {
+    display: flex; justify-content: center; gap: 12px; margin-bottom: 24px;
+  }
+  .pin-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid var(--border); background: transparent;
+    transition: all 0.2s;
+  }
+  .pin-dot.filled { background: var(--accent); border-color: var(--accent); }
+  .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .pin-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 20px; font-weight: 600;
+    padding: 16px; border-radius: 10px; cursor: pointer;
+    transition: all 0.15s; font-family: 'IBM Plex Mono', monospace;
+  }
+  .pin-btn:hover { background: var(--border); }
+  .pin-btn:active { transform: scale(0.95); }
+  .pin-btn.del { font-size: 16px; color: var(--muted); }
+  .pin-error { color: var(--red); font-size: 13px; margin-top: 8px; min-height: 20px; }
+
+  /* LAYOUT */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 0; flex-shrink: 0;
+    position: fixed; height: 100vh; overflow-y: auto; z-index: 100;
+  }
+  .sidebar-logo { padding: 0 20px 24px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .sidebar-logo .name { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .sidebar-logo .role { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px; padding: 11px 20px;
+    cursor: pointer; transition: all 0.15s; font-size: 14px; color: var(--muted);
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--surface2); color: var(--accent); border-left-color: var(--accent); }
+  .nav-item .icon { font-size: 18px; width: 22px; text-align: center; }
+  .sidebar-bottom { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); }
+  .logout-btn {
+    width: 100%; padding: 10px; background: transparent; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 13px;
+    transition: all 0.15s;
+  }
+  .logout-btn:hover { border-color: var(--red); color: var(--red); }
+
+  .main { margin-left: 220px; flex: 1; padding: 28px; min-height: 100vh; }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+  /* CARDS */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .stat-value { font-size: 26px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.purple { color: var(--purple); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.blue { color: var(--blue); }
+  .stat-value.accent { color: var(--accent); }
+
+  /* BUTTONS */
+  .btn {
+    padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all 0.15s; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-secondary { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { opacity: 0.85; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-amber { background: var(--amber); color: #000; }
+  .btn-purple { background: var(--purple); color: #fff; }
+
+  /* INPUTS */
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-input {
+    width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 14px; outline: none;
+    transition: border-color 0.15s; font-family: inherit;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 14px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* BADGE */
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; display: inline-block; }
+  .badge-green { background: rgba(46,204,113,0.15); color: var(--green); }
+  .badge-purple { background: rgba(155,89,182,0.15); color: var(--purple); }
+  .badge-amber { background: rgba(243,156,18,0.15); color: var(--amber); }
+  .badge-red { background: rgba(231,76,60,0.15); color: var(--red); }
+  .badge-blue { background: rgba(52,152,219,0.15); color: var(--blue); }
+
+  /* CAJA / POS */
+  .pos-layout { display: grid; grid-template-columns: 1fr 380px; gap: 20px; height: calc(100vh - 120px); }
+  .pos-left { display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+  .pos-right { display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+  .scan-bar { display: flex; gap: 10px; }
+  .scan-bar .form-input { flex: 1; font-size: 15px; }
+  .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px,1fr)); gap: 10px; overflow-y: auto; max-height: 350px; }
+  .product-tile {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.15s; text-align: center;
+  }
+  .product-tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .product-tile .p-name { font-size: 12px; font-weight: 600; margin-bottom: 6px; line-height: 1.3; }
+  .product-tile .p-price { font-size: 14px; color: var(--accent); font-family: 'IBM Plex Mono', monospace; }
+  .product-tile .p-stock { font-size: 11px; color: var(--muted); }
+  .cart-items { flex: 1; overflow-y: auto; }
+  .cart-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cart-item-name { flex: 1; font-size: 13px; }
+  .cart-item-qty { display: flex; align-items: center; gap: 6px; }
+  .qty-btn {
+    width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qty-btn:hover { border-color: var(--accent); }
+  .cart-item-price { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--accent); min-width: 70px; text-align: right; }
+  .cart-total-area { border-top: 1px solid var(--border); padding-top: 14px; }
+  .cart-total { font-size: 28px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; color: var(--accent); }
+  .pay-methods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+  .pay-btn {
+    padding: 12px 8px; border-radius: 10px; border: 2px solid var(--border);
+    background: var(--surface2); color: var(--muted); cursor: pointer;
+    font-size: 12px; font-weight: 600; text-align: center; transition: all 0.15s;
+  }
+  .pay-btn:hover { border-color: var(--accent); color: var(--text); }
+  .pay-btn.selected-green { border-color: var(--green); color: var(--green); background: rgba(46,204,113,0.1); }
+  .pay-btn.selected-purple { border-color: var(--purple); color: var(--purple); background: rgba(155,89,182,0.1); }
+  .pay-btn.selected-amber { border-color: var(--amber); color: var(--amber); background: rgba(243,156,18,0.1); }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
+  }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; width: 100%; max-width: 480px;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* RECIBO */
+  .recibo {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    background: #fff; color: #000; padding: 20px; border-radius: 8px;
+    max-width: 300px; margin: 0 auto; line-height: 1.6;
+  }
+  .recibo-title { text-align: center; font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .recibo-sub { text-align: center; font-size: 11px; margin-bottom: 12px; color: #555; }
+  .recibo-line { border-top: 1px dashed #ccc; margin: 10px 0; }
+  .recibo-row { display: flex; justify-content: space-between; }
+  .recibo-total { font-size: 14px; font-weight: 700; }
+
+  /* ALERTS */
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+  .alert-warning { background: rgba(243,156,18,0.1); border: 1px solid rgba(243,156,18,0.3); color: var(--amber); }
+  .alert-success { background: rgba(46,204,113,0.1); border: 1px solid rgba(46,204,113,0.3); color: var(--green); }
+  .alert-danger { background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.3); color: var(--red); }
+
+  /* SEARCH */
+  .search-bar { position: relative; margin-bottom: 16px; }
+  .search-bar .form-input { padding-left: 36px; }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 16px; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--surface2); padding: 4px; border-radius: 10px; width: fit-content; }
+  .tab { padding: 8px 18px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); transition: all 0.15s; }
+  .tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+
+  /* OFFLINE BADGE */
+  .offline-bar {
+    position: fixed; top: 0; left: 0; right: 0; background: var(--amber); color: #000;
+    text-align: center; font-size: 12px; font-weight: 600; padding: 6px; z-index: 9999;
+  }
+
+  /* FIADO ACCOUNT */
+  .fiado-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .deuda-total { font-size: 32px; font-weight: 700; color: var(--amber); font-family: 'IBM Plex Mono', monospace; }
+
+  @media (max-width: 768px) {
+    .sidebar { width: 60px; }
+    .sidebar-logo, .nav-item span, .sidebar-bottom { display: none; }
+    .nav-item { justify-content: center; padding: 14px; }
+    .main { margin-left: 60px; padding: 16px; }
+    .pos-layout { grid-template-columns: 1fr; }
+    .form-row, .form-row-3 { grid-template-columns: 1fr; }
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    .recibo, .recibo * { visibility: visible; }
+    .recibo { position: fixed; left: 0; top: 0; width: 80mm; }
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="module">
+const { createClient } = supabase;
+const SB = createClient(
+  'https://hhgnbffktakxafczyktg.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoZ25iZmZrdGFreGFmY3p5a3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MDMyMjEsImV4cCI6MjA5MzQ3OTIyMX0.yHEBx2Nug1oMONxPXp4lqiVlCKBIpHpfNuiupuTORz0'
+);
+
+// ═══════════════ STATE ═══════════════
+let state = {
+  role: null, // null | 'vendedor' | 'dueno'
+  online: navigator.onLine,
+  page: 'caja',
+  productos: [],
+  clientes: [],
+  ventas: [],
+  cart: [],
+  metodoPago: null,
+  clienteSeleccionado: null,
+  modal: null,
+  pendingSync: JSON.parse(localStorage.getItem('pending_sync') || '[]'),
+  busqueda: '',
+  busquedaProducto: '',
+  toastMsg: null,
+  reporte: { periodo: 'dia' },
+};
+
+// PINs (cambiar según necesidad)
+const PINS = { '4251': 'vendedor', '8521': 'dueno' };
+
+// ═══════════════ OFFLINE QUEUE ═══════════════
+function savePending() {
+  localStorage.setItem('pending_sync', JSON.stringify(state.pendingSync));
+}
+async function syncPending() {
+  if (!state.online || state.pendingSync.length === 0) return;
+  const queue = [...state.pendingSync];
+  state.pendingSync = [];
+  savePending();
+  for (const op of queue) {
+    try {
+      if (op.type === 'venta') await SB.from('ventas').insert(op.data);
+      if (op.type === 'pago_fiado') await SB.from('pagos_fiado').insert(op.data);
+    } catch(e) {
+      state.pendingSync.push(op);
+    }
+  }
+  savePending();
+}
+window.addEventListener('online', () => { state.online = true; syncPending(); render(); });
+window.addEventListener('offline', () => { state.online = false; render(); });
+
+// ═══════════════ SUPABASE HELPERS ═══════════════
+async function loadProductos() {
+  const { data } = await SB.from('productos').select('*').order('nombre');
+  state.productos = data || [];
+}
+async function loadClientes() {
+  const { data } = await SB.from('clientes').select('*').order('nombre');
+  state.clientes = data || [];
+}
+async function loadVentas() {
+  const hoy = new Date().toISOString().split('T')[0];
+  const { data } = await SB.from('ventas').select('*, venta_items(*)').gte('created_at', hoy);
+  state.ventas = data || [];
+}
+async function loadAll() {
+  await Promise.all([loadProductos(), loadClientes(), loadVentas()]);
+  render();
+}
+
+// ═══════════════ HELPERS ═══════════════
+const fM = (n) => `S/ ${Number(n||0).toFixed(2)}`;
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const today = () => new Date().toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'numeric' });
+const now = () => new Date().toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' });
+
+function toast(msg) {
+  state.toastMsg = msg;
+  render();
+  setTimeout(() => { state.toastMsg = null; render(); }, 2500);
+}
+
+function cartTotal() {
+  return state.cart.reduce((s, i) => s + i.precio * i.qty, 0);
+}
+
+// ═══════════════ RENDER ENGINE ═══════════════
+function render() {
+  const root = document.getElementById('root');
+  if (!state.role) { root.innerHTML = renderLogin(); bindLogin(); return; }
+  root.innerHTML = renderApp();
+  bindApp();
+}
+
+// ═══════════════ LOGIN ═══════════════
+let pinBuffer = '';
+function renderLogin() {
+  const dots = [0,1,2,3].map(i =>
+    `<div class="pin-dot ${i < pinBuffer.length ? 'filled' : ''}"></div>`
+  ).join('');
+  return `
+  <div class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">🏪</div>
+      <div class="login-title">Bodega POS</div>
+      <div class="login-sub">Ingresa tu PIN para continuar</div>
+      <div class="pin-display">${dots}</div>
+      <div class="pin-pad">
+        ${[1,2,3,4,5,6,7,8,9,'','0','⌫'].map(k =>
+          `<button class="pin-btn ${k==='⌫'?'del':''}" data-key="${k}">${k}</button>`
+        ).join('')}
+      </div>
+      <div class="pin-error" id="pin-error"></div>
+    </div>
+  </div>`;
+}
+function bindLogin() {
+  document.querySelectorAll('.pin-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.key;
+      if (k === '⌫') { pinBuffer = pinBuffer.slice(0,-1); }
+      else if (k === '') return;
+      else if (pinBuffer.length < 4) { pinBuffer += k; }
+      if (pinBuffer.length === 4) {
+        const role = PINS[pinBuffer];
+        if (role) {
+          state.role = role;
+          state.page = 'caja';
+          pinBuffer = '';
+          loadAll();
+        } else {
+          document.getElementById('pin-error').textContent = 'PIN incorrecto';
+          setTimeout(() => { pinBuffer = ''; render(); }, 800);
+          return;
+        }
+      }
+      render();
+    });
+  });
+}
+
+// ═══════════════ APP SHELL ═══════════════
+function renderApp() {
+  const isDueno = state.role === 'dueno';
+  const navItems = [
+    { id: 'caja', icon: '🛒', label: 'Caja' },
+    { id: 'inventario', icon: '📦', label: 'Inventario' },
+    { id: 'clientes', icon: '👥', label: 'Clientes' },
+    { id: 'fiados', icon: '📋', label: 'Fiados' },
+    ...(isDueno ? [{ id: 'reportes', icon: '📊', label: 'Reportes' }] : []),
+  ];
+  return `
+  ${!state.online ? '<div class="offline-bar">⚠️ Sin internet — los datos se guardarán localmente y sincronizarán al reconectarse</div>' : ''}
+  ${state.toastMsg ? `<div style="position:fixed;bottom:24px;right:24px;background:var(--accent);color:#000;padding:12px 20px;border-radius:10px;font-weight:600;font-size:13px;z-index:9999">${state.toastMsg}</div>` : ''}
+  <div class="app">
+    <div class="sidebar">
+      <div class="sidebar-logo">
+        <div style="font-size:24px;margin-bottom:4px">🏪</div>
+        <div class="name">Mi Bodega</div>
+        <div class="role">${state.role === 'dueno' ? '👑 Dueño' : '🧑‍💼 Vendedor'}</div>
+      </div>
+      ${navItems.map(n => `
+        <div class="nav-item ${state.page===n.id?'active':''}" data-page="${n.id}">
+          <span class="icon">${n.icon}</span>
+          <span>${n.label}</span>
+        </div>`).join('')}
+      <div class="sidebar-bottom">
+        <button class="logout-btn" id="logout-btn">🔒 Cerrar sesión</button>
+      </div>
+    </div>
+    <div class="main" style="${!state.online?'margin-top:36px':''}">
+      ${renderPage()}
+    </div>
+  </div>
+  ${state.modal ? renderModal() : ''}`;
+}
+
+function renderPage() {
+  switch(state.page) {
+    case 'caja': return renderCaja();
+    case 'inventario': return renderInventario();
+    case 'clientes': return renderClientes();
+    case 'fiados': return renderFiados();
+    case 'reportes': return renderReportes();
+    default: return renderCaja();
+  }
+}
+
+// ═══════════════ CAJA ═══════════════
+function renderCaja() {
+  const filtered = state.productos.filter(p =>
+    !state.busquedaProducto || p.nombre.toLowerCase().includes(state.busquedaProducto.toLowerCase())
+  );
+  const total = cartTotal();
+  return `
+  <div class="page-title">🛒 Caja</div>
+  <div class="page-sub">${today()} — ${now()}</div>
+  <div class="pos-layout">
+    <div class="pos-left card">
+      <div class="scan-bar">
+        <input class="form-input" id="scan-input" placeholder="📷 Escanear código de barras..." autofocus />
+        <input class="form-input" id="search-input" placeholder="🔍 Buscar producto..." value="${state.busquedaProducto}" style="max-width:200px" />
+      </div>
+      <div class="products-grid">
+        ${filtered.map(p => `
+          <div class="product-tile" data-add="${p.id}">
+            <div class="p-name">${p.nombre}</div>
+            <div class="p-price">${fM(p.precio_venta)}</div>
+            <div class="p-stock">Stock: ${p.stock}</div>
+          </div>`).join('') || '<div style="color:var(--muted);padding:20px">Sin productos</div>'}
+      </div>
+    </div>
+    <div class="pos-right">
+      <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--muted)">CARRITO</div>
+        <div class="cart-items" style="flex:1;overflow-y:auto">
+          ${state.cart.length === 0
+            ? '<div style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Agrega productos</div>'
+            : state.cart.map((item, i) => `
+              <div class="cart-item">
+                <div class="cart-item-name">${item.nombre}</div>
+                <div class="cart-item-qty">
+                  <button class="qty-btn" data-qi="${i}" data-d="-1">−</button>
+                  <span class="mono" style="min-width:20px;text-align:center">${item.qty}</span>
+                  <button class="qty-btn" data-qi="${i}" data-d="1">+</button>
+                </div>
+                <div class="cart-item-price">${fM(item.precio * item.qty)}</div>
+                <button class="qty-btn" data-rm="${i}" style="border-color:var(--red);color:var(--red)">×</button>
+              </div>`).join('')}
+        </div>
+        <div class="cart-total-area">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="color:var(--muted);font-size:13px">${state.cart.reduce((s,i)=>s+i.qty,0)} productos</span>
+            <div class="cart-total">${fM(total)}</div>
+          </div>
+          <div class="pay-methods">
+            <button class="pay-btn ${state.metodoPago==='efectivo'?'selected-green':''}" data-pay="efectivo">💵<br>Efectivo</button>
+            <button class="pay-btn ${state.metodoPago==='yape'?'selected-purple':''}" data-pay="yape">📱<br>Yape</button>
+            <button class="pay-btn ${state.metodoPago==='fiado'?'selected-amber':''}" data-pay="fiado">📋<br>Fiado</button>
+          </div>
+          ${state.metodoPago === 'fiado' ? `
+            <select class="form-input" id="cliente-fiado" style="margin-bottom:10px">
+              <option value="">— Seleccionar cliente —</option>
+              ${state.clientes.map(c => `<option value="${c.id}" ${state.clienteSeleccionado===c.id?'selected':''}>${c.nombre}</option>`).join('')}
+            </select>` : ''}
+          <button class="btn btn-primary" id="cobrar-btn" style="width:100%;padding:14px;font-size:15px;${state.cart.length===0||!state.metodoPago?'opacity:0.4;cursor:not-allowed':''}">
+            ✅ Cobrar ${fM(total)}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═══════════════ INVENTARIO ═══════════════
+function renderInventario() {
+  const isDueno = state.role === 'dueno';
+  const filtered = state.productos.filter(p =>
+    !state.busqueda || p.nombre.toLowerCase().includes(state.busqueda.toLowerCase()) ||
+    (p.codigo_barras||'').includes(state.busqueda)
+  );
+  const stockBajo = state.productos.filter(p => p.stock <= (p.stock_minimo||5));
+  return `
+  <div class="page-title">📦 Inventario</div>
+  <div class="page-sub">${state.productos.length} productos registrados</div>
+  ${stockBajo.length > 0 ? `<div class="alert alert-warning">⚠️ ${stockBajo.length} producto(s) con stock bajo: ${stockBajo.map(p=>p.nombre).join(', ')}</div>` : ''}
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="search-bar" style="flex:1;margin:0;margin-right:12px">
+      <span class="search-icon">🔍</span>
+      <input class="form-input" id="inv-search" placeholder="Buscar producto o código..." value="${state.busqueda}" />
+    </div>
+    ${isDueno ? `<button class="btn btn-primary" id="add-product-btn">+ Agregar producto</button>` : ''}
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Código</th>
+          <th>Precio venta</th>
+          ${isDueno ? '<th>Precio compra</th><th>Ganancia</th>' : ''}
+          <th>Stock</th>
+          <th>Stock mín.</th>
+          <th>Estado</th>
+          ${isDueno ? '<th>Acciones</th>' : ''}
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(p => {
+          const ganancia = p.precio_venta - (p.precio_compra||0);
+          const bajo = p.stock <= (p.stock_minimo||5);
+          return `<tr>
+            <td style="font-weight:500">${p.nombre}</td>
+            <td class="mono" style="color:var(--muted)">${p.codigo_barras||'—'}</td>
+            <td class="mono" style="color:var(--accent)">${fM(p.precio_venta)}</td>
+            ${isDueno ? `<td class="mono" style="color:var(--muted)">${fM(p.precio_compra||0)}</td><td class="mono" style="color:var(--green)">${fM(ganancia)}</td>` : ''}
+            <td class="mono" style="color:${bajo?'var(--red)':'var(--text)'};font-weight:${bajo?'700':'400'}">${p.stock}</td>
+            <td class="mono" style="color:var(--muted)">${p.stock_minimo||5}</td>
+            <td><span class="badge ${bajo?'badge-red':'badge-green'}">${bajo?'⚠️ Bajo':'✅ OK'}</span></td>
+            ${isDueno ? `<td><button class="btn btn-secondary btn-sm" data-edit-product="${p.id}">Editar</button></td>` : ''}
+          </tr>`;
+        }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Sin resultados</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+// ═══════════════ CLIENTES ═══════════════
+function renderClientes() {
+  const isDueno = state.role === 'dueno';
+  const filtered = state.clientes.filter(c =>
+    !state.busqueda || c.nombre.toLowerCase().includes(state.busqueda.toLowerCase())
+  );
+  return `
+  <div class="page-title">👥 Clientes</div>
+  <div class="page-sub">${state.clientes.length} clientes registrados</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="search-bar" style="flex:1;margin:0;margin-right:12px">
+      <span class="search-icon">🔍</span>
+      <input class="form-input" id="cli-search" placeholder="Buscar cliente..." value="${state.busqueda}" />
+    </div>
+    ${isDueno ? `<button class="btn btn-primary" id="add-client-btn">+ Agregar cliente</button>` : ''}
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead>
+        <tr><th>Nombre</th><th>Teléfono</th><th>Deuda total</th><th>Estado</th><th>Acciones</th></tr>
+      </thead>
+      <tbody>
+        ${filtered.map(c => `
+          <tr>
+            <td style="font-weight:500">${c.nombre}</td>
+            <td style="color:var(--muted)">${c.telefono||'—'}</td>
+            <td class="mono" style="color:${(c.deuda||0)>0?'var(--amber)':'var(--green)'};font-weight:700">${fM(c.deuda||0)}</td>
+            <td><span class="badge ${(c.deuda||0)>0?'badge-amber':'badge-green'}">${(c.deuda||0)>0?'Con deuda':'Al día'}</span></td>
+            <td>
+              <button class="btn btn-secondary btn-sm" data-view-fiado="${c.id}">Ver cuenta</button>
+            </td>
+          </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">Sin clientes</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+// ═══════════════ FIADOS ═══════════════
+function renderFiados() {
+  const conDeuda = state.clientes.filter(c => (c.deuda||0) > 0).sort((a,b) => b.deuda - a.deuda);
+  const totalDeuda = conDeuda.reduce((s,c) => s + (c.deuda||0), 0);
+  return `
+  <div class="page-title">📋 Fiados</div>
+  <div class="page-sub">${conDeuda.length} clientes con deuda pendiente</div>
+  <div class="stat-grid" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-label">Total en fiados</div><div class="stat-value amber">${fM(totalDeuda)}</div></div>
+    <div class="stat-card"><div class="stat-label">Clientes con deuda</div><div class="stat-value accent">${conDeuda.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Clientes al día</div><div class="stat-value green">${state.clientes.length - conDeuda.length}</div></div>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Cliente</th><th>Deuda</th><th>Teléfono</th><th>Acciones</th></tr></thead>
+      <tbody>
+        ${conDeuda.map((c,i) => `
+          <tr>
+            <td style="color:var(--muted)">${i+1}</td>
+            <td style="font-weight:600">${c.nombre}</td>
+            <td class="mono" style="color:var(--amber);font-weight:700">${fM(c.deuda)}</td>
+            <td style="color:var(--muted)">${c.telefono||'—'}</td>
+            <td style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" data-view-fiado="${c.id}">Ver cuenta</button>
+              <button class="btn btn-amber btn-sm" data-pago-fiado="${c.id}">Registrar pago</button>
+            </td>
+          </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">🎉 Sin deudas pendientes</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+// ═══════════════ REPORTES (solo dueño) ═══════════════
+function renderReportes() {
+  const hoy = new Date();
+  const ventasHoy = state.ventas.filter(v => {
+    const vd = new Date(v.created_at);
+    return vd.toDateString() === hoy.toDateString();
+  });
+  const totalHoy = ventasHoy.reduce((s,v) => s + (v.total||0), 0);
+  const efectivoHoy = ventasHoy.filter(v=>v.metodo==='efectivo').reduce((s,v)=>s+v.total,0);
+  const yapeHoy = ventasHoy.filter(v=>v.metodo==='yape').reduce((s,v)=>s+v.total,0);
+  const fiadoHoy = ventasHoy.filter(v=>v.metodo==='fiado').reduce((s,v)=>s+v.total,0);
+
+  // Productos más vendidos del día
+  const prodCount = {};
+  ventasHoy.forEach(v => {
+    (v.venta_items||[]).forEach(item => {
+      prodCount[item.producto_nombre] = (prodCount[item.producto_nombre]||0) + item.cantidad;
+    });
+  });
+  const topProductos = Object.entries(prodCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  return `
+  <div class="page-title">📊 Reportes</div>
+  <div class="page-sub">${today()}</div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Ventas del día</div><div class="stat-value accent">${fM(totalHoy)}</div></div>
+    <div class="stat-card"><div class="stat-label">💵 Efectivo</div><div class="stat-value green">${fM(efectivoHoy)}</div></div>
+    <div class="stat-card"><div class="stat-label">📱 Yape</div><div class="stat-value purple">${fM(yapeHoy)}</div></div>
+    <div class="stat-card"><div class="stat-label">📋 Fiado</div><div class="stat-value amber">${fM(fiadoHoy)}</div></div>
+    <div class="stat-card"><div class="stat-label">N° transacciones</div><div class="stat-value blue">${ventasHoy.length}</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px">
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:16px">🏆 Productos más vendidos hoy</div>
+      ${topProductos.length > 0
+        ? topProductos.map(([nombre, cant], i) => `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div style="font-size:18px;width:28px;text-align:center">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]}</div>
+            <div style="flex:1;font-size:13px">${nombre}</div>
+            <div class="badge badge-blue">${cant} uds</div>
+          </div>`).join('')
+        : '<div style="color:var(--muted);font-size:13px">Sin ventas hoy</div>'}
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:16px">📋 Últimas ventas</div>
+      ${ventasHoy.slice(-5).reverse().map(v => `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+          <div>
+            <span class="badge ${v.metodo==='efectivo'?'badge-green':v.metodo==='yape'?'badge-purple':'badge-amber'}">${v.metodo}</span>
+            ${v.cliente_nombre ? `<span style="color:var(--muted);margin-left:6px">${v.cliente_nombre}</span>` : ''}
+          </div>
+          <div class="mono" style="color:var(--accent)">${fM(v.total)}</div>
+        </div>`).join('') || '<div style="color:var(--muted);font-size:13px">Sin ventas hoy</div>'}
+    </div>
+  </div>`;
+}
+
+// ═══════════════ MODALES ═══════════════
+function renderModal() {
+  const m = state.modal;
+  if (m.type === 'add-product') return renderModalAddProduct(m.data);
+  if (m.type === 'view-fiado') return renderModalFiado(m.data);
+  if (m.type === 'pago-fiado') return renderModalPagoFiado(m.data);
+  if (m.type === 'recibo') return renderModalRecibo(m.data);
+  if (m.type === 'add-client') return renderModalAddClient();
+  return '';
+}
+
+function renderModalAddProduct(p) {
+  const isEdit = !!p;
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">${isEdit ? '✏️ Editar' : '➕ Agregar'} producto</div>
+      <div class="form-group"><label class="form-label">Nombre del producto</label>
+        <input class="form-input" id="p-nombre" value="${p?.nombre||''}" placeholder="Ej: Coca Cola 600ml" /></div>
+      <div class="form-group"><label class="form-label">Código de barras</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="p-codigo" value="${p?.codigo_barras||''}" placeholder="Escanear o escribir..." />
+          <button class="btn btn-secondary" id="scan-producto-btn">📷</button>
+        </div></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Precio de compra (S/)</label>
+          <input class="form-input" id="p-compra" type="number" step="0.01" value="${p?.precio_compra||''}" placeholder="0.00" /></div>
+        <div class="form-group"><label class="form-label">Precio de venta (S/)</label>
+          <input class="form-input" id="p-venta" type="number" step="0.01" value="${p?.precio_venta||''}" placeholder="0.00" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Stock actual</label>
+          <input class="form-input" id="p-stock" type="number" value="${p?.stock||''}" placeholder="0" /></div>
+        <div class="form-group"><label class="form-label">Stock mínimo (alerta)</label>
+          <input class="form-input" id="p-stockmin" type="number" value="${p?.stock_minimo||5}" placeholder="5" /></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-close">Cancelar</button>
+        <button class="btn btn-primary" id="save-product-btn" data-id="${p?.id||''}">💾 Guardar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderModalAddClient() {
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">➕ Agregar cliente</div>
+      <div class="form-group"><label class="form-label">Nombre completo</label>
+        <input class="form-input" id="c-nombre" placeholder="Ej: María García" /></div>
+      <div class="form-group"><label class="form-label">Teléfono (para WhatsApp)</label>
+        <input class="form-input" id="c-tel" type="tel" placeholder="Ej: 987654321" /></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-close">Cancelar</button>
+        <button class="btn btn-primary" id="save-client-btn">💾 Guardar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderModalFiado(cliente) {
+  if (!cliente) return '';
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" style="max-width:540px">
+      <div class="fiado-header">
+        <div>
+          <div class="modal-title" style="margin-bottom:4px">📋 ${cliente.nombre}</div>
+          <div style="color:var(--muted);font-size:13px">${cliente.telefono||'Sin teléfono'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">DEUDA TOTAL</div>
+          <div class="deuda-total">${fM(cliente.deuda||0)}</div>
+        </div>
+      </div>
+      <div id="fiado-items-area">
+        <div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Cargando historial...</div>
+      </div>
+      <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
+        <button class="btn btn-secondary" id="modal-close">Cerrar</button>
+        <button class="btn btn-amber" data-pago-fiado="${cliente.id}">💰 Registrar pago</button>
+        ${cliente.telefono ? `
+          <button class="btn btn-green" id="whatsapp-fiado" data-tel="${cliente.telefono}" data-nombre="${cliente.nombre}" data-deuda="${cliente.deuda||0}">📱 WhatsApp</button>` : ''}
+        <button class="btn btn-secondary" id="print-fiado">🖨️ Imprimir</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderModalPagoFiado(cliente) {
+  if (!cliente) return '';
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">💰 Registrar pago — ${cliente.nombre}</div>
+      <div class="alert alert-warning" style="margin-bottom:16px">Deuda actual: <strong>${fM(cliente.deuda||0)}</strong></div>
+      <div class="form-group"><label class="form-label">Monto a pagar (S/)</label>
+        <input class="form-input" id="pago-monto" type="number" step="0.50" placeholder="0.00" max="${cliente.deuda||0}" /></div>
+      <div class="form-group"><label class="form-label">Método de pago</label>
+        <select class="form-input" id="pago-metodo">
+          <option value="efectivo">💵 Efectivo</option>
+          <option value="yape">📱 Yape</option>
+        </select></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-close">Cancelar</button>
+        <button class="btn btn-green" id="confirmar-pago-btn" data-id="${cliente.id}" data-deuda="${cliente.deuda||0}" data-nombre="${cliente.nombre}">✅ Confirmar pago</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderModalRecibo(venta) {
+  const itemsHtml = (venta.items||[]).map(i =>
+    `<div class="recibo-row"><span>${i.nombre} x${i.qty}</span><span>${fM(i.precio*i.qty)}</span></div>`
+  ).join('');
+  const reciboText = `
+    Mi Bodega
+    ${today()} ${now()}
+    ${'-'.repeat(32)}
+    ${(venta.items||[]).map(i=>`${i.nombre} x${i.qty}  ${fM(i.precio*i.qty)}`).join('\n')}
+    ${'-'.repeat(32)}
+    TOTAL: ${fM(venta.total)}
+    Pago: ${venta.metodo}
+    ${venta.metodo==='fiado'?`Cliente: ${venta.clienteNombre}`:''}
+    Gracias por su compra!
+  `.trim();
+
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" style="max-width:360px">
+      <div class="modal-title">🧾 Recibo de venta</div>
+      <div class="recibo" id="recibo-print">
+        <div class="recibo-title">MI BODEGA</div>
+        <div class="recibo-sub">${today()} — ${now()}</div>
+        <div class="recibo-line"></div>
+        ${itemsHtml}
+        <div class="recibo-line"></div>
+        <div class="recibo-row recibo-total"><span>TOTAL</span><span>${fM(venta.total)}</span></div>
+        <div class="recibo-row" style="color:#666;font-size:11px"><span>Método</span><span>${venta.metodo}</span></div>
+        ${venta.metodo==='fiado'?`<div class="recibo-row" style="color:#666;font-size:11px"><span>Cliente</span><span>${venta.clienteNombre}</span></div>`:''}
+        <div class="recibo-line"></div>
+        <div style="text-align:center;font-size:11px;color:#666">¡Gracias por su compra!</div>
+      </div>
+      <div class="modal-footer" style="flex-wrap:wrap">
+        <button class="btn btn-secondary" id="modal-close">Cerrar</button>
+        <button class="btn btn-green" id="print-recibo">🖨️ Imprimir</button>
+        ${venta.clienteTel ? `<button class="btn btn-primary" id="wa-recibo" data-text="${encodeURIComponent(reciboText)}" data-tel="${venta.clienteTel}">📱 WhatsApp</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═══════════════ BIND EVENTS ═══════════════
+function bindApp() {
+  // Nav
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+    el.addEventListener('click', () => {
+      state.page = el.dataset.page;
+      state.busqueda = '';
+      render();
+    });
+  });
+
+  // Logout
+  document.getElementById('logout-btn')?.addEventListener('click', () => {
+    state.role = null; state.page = 'caja'; state.cart = [];
+    state.metodoPago = null; state.clienteSeleccionado = null;
+    pinBuffer = '';
+    render();
+  });
+
+  // Modal close
+  document.getElementById('modal-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modal-overlay') { state.modal = null; render(); }
+  });
+  document.getElementById('modal-close')?.addEventListener('click', () => { state.modal = null; render(); });
+
+  // Searches
+  document.getElementById('inv-search')?.addEventListener('input', e => { state.busqueda = e.target.value; render(); });
+  document.getElementById('cli-search')?.addEventListener('input', e => { state.busqueda = e.target.value; render(); });
+  document.getElementById('search-input')?.addEventListener('input', e => { state.busquedaProducto = e.target.value; render(); });
+
+  // Scan
+  const scanInput = document.getElementById('scan-input');
+  if (scanInput) {
+    scanInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const codigo = e.target.value.trim();
+        const prod = state.productos.find(p => p.codigo_barras === codigo);
+        if (prod) { addToCart(prod); e.target.value = ''; state.busquedaProducto = ''; render(); }
+        else { toast('❌ Producto no encontrado'); e.target.value = ''; }
+      }
+    });
+  }
+
+  // Add to cart from grid
+  document.querySelectorAll('[data-add]').forEach(el => {
+    el.addEventListener('click', () => {
+      const prod = state.productos.find(p => p.id == el.dataset.add);
+      if (prod) { addToCart(prod); render(); }
+    });
+  });
+
+  // Cart qty
+  document.querySelectorAll('[data-qi]').forEach(el => {
+    el.addEventListener('click', () => {
+      const i = parseInt(el.dataset.qi);
+      state.cart[i].qty += parseInt(el.dataset.d);
+      if (state.cart[i].qty <= 0) state.cart.splice(i, 1);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-rm]').forEach(el => {
+    el.addEventListener('click', () => { state.cart.splice(parseInt(el.dataset.rm), 1); render(); });
+  });
+
+  // Pay method
+  document.querySelectorAll('[data-pay]').forEach(el => {
+    el.addEventListener('click', () => { state.metodoPago = el.dataset.pay; render(); });
+  });
+
+  // Cliente fiado select
+  document.getElementById('cliente-fiado')?.addEventListener('change', e => {
+    state.clienteSeleccionado = e.target.value;
+  });
+
+  // Cobrar
+  document.getElementById('cobrar-btn')?.addEventListener('click', async () => {
+    if (state.cart.length === 0 || !state.metodoPago) return;
+    if (state.metodoPago === 'fiado' && !state.clienteSeleccionado) {
+      toast('⚠️ Selecciona un cliente para el fiado'); return;
+    }
+    await procesarVenta();
+  });
+
+  // Add product btn
+  document.getElementById('add-product-btn')?.addEventListener('click', () => {
+    state.modal = { type: 'add-product', data: null }; render();
+  });
+
+  // Edit product
+  document.querySelectorAll('[data-edit-product]').forEach(el => {
+    el.addEventListener('click', () => {
+      const p = state.productos.find(x => x.id == el.dataset.editProduct);
+      state.modal = { type: 'add-product', data: p }; render();
+    });
+  });
+
+  // Save product
+  document.getElementById('save-product-btn')?.addEventListener('click', async () => {
+    const id = document.getElementById('save-product-btn').dataset.id;
+    const data = {
+      nombre: document.getElementById('p-nombre').value.trim(),
+      codigo_barras: document.getElementById('p-codigo').value.trim() || null,
+      precio_compra: parseFloat(document.getElementById('p-compra').value)||0,
+      precio_venta: parseFloat(document.getElementById('p-venta').value)||0,
+      stock: parseInt(document.getElementById('p-stock').value)||0,
+      stock_minimo: parseInt(document.getElementById('p-stockmin').value)||5,
+    };
+    if (!data.nombre || !data.precio_venta) { toast('⚠️ Nombre y precio son obligatorios'); return; }
+    if (id) { await SB.from('productos').update(data).eq('id', id); }
+    else { await SB.from('productos').insert(data); }
+    await loadProductos();
+    state.modal = null;
+    toast('✅ Producto guardado');
+    render();
+  });
+
+  // Add client
+  document.getElementById('add-client-btn')?.addEventListener('click', () => {
+    state.modal = { type: 'add-client' }; render();
+  });
+  document.getElementById('save-client-btn')?.addEventListener('click', async () => {
+    const nombre = document.getElementById('c-nombre').value.trim();
+    const telefono = document.getElementById('c-tel').value.trim();
+    if (!nombre) { toast('⚠️ Ingresa el nombre'); return; }
+    await SB.from('clientes').insert({ nombre, telefono, deuda: 0 });
+    await loadClientes();
+    state.modal = null;
+    toast('✅ Cliente agregado');
+    render();
+  });
+
+  // View fiado
+  document.querySelectorAll('[data-view-fiado]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const c = state.clientes.find(x => x.id == el.dataset.viewFiado);
+      state.modal = { type: 'view-fiado', data: c }; render();
+      // Load fiado items
+      const { data } = await SB.from('ventas').select('*, venta_items(*)').eq('cliente_id', c.id).eq('metodo', 'fiado').order('created_at', { ascending: false }).limit(20);
+      const area = document.getElementById('fiado-items-area');
+      if (!area) return;
+      if (!data || data.length === 0) { area.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin compras registradas</div>'; return; }
+      area.innerHTML = `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Fecha</th><th>Productos</th><th>Total</th></tr></thead>
+          <tbody>
+            ${data.map(v => `<tr>
+              <td style="color:var(--muted);font-size:12px">${new Date(v.created_at).toLocaleDateString('es-PE')}</td>
+              <td style="font-size:12px">${(v.venta_items||[]).map(i=>`${i.producto_nombre} x${i.cantidad}`).join(', ')}</td>
+              <td class="mono" style="color:var(--amber)">${fM(v.total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`;
+    });
+  });
+
+  // Pago fiado from fiados page
+  document.querySelectorAll('[data-pago-fiado]').forEach(el => {
+    el.addEventListener('click', () => {
+      const c = state.clientes.find(x => x.id == el.dataset.pagoPiado || x.id == el.dataset.pagoFiado);
+      state.modal = { type: 'pago-fiado', data: c }; render();
+    });
+  });
+
+  // Confirmar pago
+  document.getElementById('confirmar-pago-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('confirmar-pago-btn');
+    const monto = parseFloat(document.getElementById('pago-monto').value)||0;
+    const metodo = document.getElementById('pago-metodo').value;
+    const clienteId = btn.dataset.id;
+    const deudaActual = parseFloat(btn.dataset.deuda)||0;
+    const nombre = btn.dataset.nombre;
+    if (monto <= 0) { toast('⚠️ Ingresa un monto válido'); return; }
+    if (monto > deudaActual) { toast('⚠️ El monto no puede ser mayor a la deuda'); return; }
+    const nuevaDeuda = deudaActual - monto;
+    const pagoData = { cliente_id: clienteId, monto, metodo, nueva_deuda: nuevaDeuda };
+    if (state.online) {
+      await SB.from('pagos_fiado').insert(pagoData);
+      await SB.from('clientes').update({ deuda: nuevaDeuda }).eq('id', clienteId);
+    } else {
+      state.pendingSync.push({ type: 'pago_fiado', data: pagoData });
+      savePending();
+      const c = state.clientes.find(x => x.id == clienteId);
+      if (c) c.deuda = nuevaDeuda;
+    }
+    await loadClientes();
+    state.modal = null;
+    toast(`✅ Pago de ${fM(monto)} registrado — ${nombre} debe ${fM(nuevaDeuda)}`);
+    render();
+  });
+
+  // Print recibo
+  document.getElementById('print-recibo')?.addEventListener('click', () => { window.print(); });
+
+  // WhatsApp recibo
+  document.getElementById('wa-recibo')?.addEventListener('click', (e) => {
+    const tel = e.target.dataset.tel.replace(/\D/g,'');
+    const text = e.target.dataset.text;
+    window.open(`https://wa.me/51${tel}?text=${text}`, '_blank');
+  });
+
+  // WhatsApp fiado
+  document.getElementById('whatsapp-fiado')?.addEventListener('click', (e) => {
+    const tel = e.target.dataset.tel.replace(/\D/g,'');
+    const nombre = e.target.dataset.nombre;
+    const deuda = parseFloat(e.target.dataset.deuda)||0;
+    const msg = encodeURIComponent(`Hola ${nombre}, le recordamos que tiene una deuda pendiente de ${fM(deuda)} en Mi Bodega. Gracias 🙏`);
+    window.open(`https://wa.me/51${tel}?text=${msg}`, '_blank');
+  });
+
+  // Print fiado
+  document.getElementById('print-fiado')?.addEventListener('click', () => { window.print(); });
+
+  // Print recibo
+  document.getElementById('print-recibo')?.addEventListener('click', () => { window.print(); });
+}
+
+// ═══════════════ CART ═══════════════
+function addToCart(prod) {
+  const existing = state.cart.find(i => i.id === prod.id);
+  if (existing) { existing.qty++; }
+  else { state.cart.push({ id: prod.id, nombre: prod.nombre, precio: prod.precio_venta, qty: 1 }); }
+}
+
+// ═══════════════ PROCESAR VENTA ═══════════════
+async function procesarVenta() {
+  const total = cartTotal();
+  const cliente = state.metodoPago === 'fiado'
+    ? state.clientes.find(c => c.id == state.clienteSeleccionado)
+    : null;
+
+  const ventaData = {
+    total,
+    metodo: state.metodoPago,
+    cliente_id: cliente?.id || null,
+    cliente_nombre: cliente?.nombre || null,
+  };
+
+  const items = state.cart.map(i => ({
+    producto_id: i.id,
+    producto_nombre: i.nombre,
+    cantidad: i.qty,
+    precio_unitario: i.precio,
+    subtotal: i.precio * i.qty,
+  }));
+
+  if (state.online) {
+    const { data: venta } = await SB.from('ventas').insert(ventaData).select().single();
+    if (venta) {
+      await SB.from('venta_items').insert(items.map(i => ({ ...i, venta_id: venta.id })));
+      // Actualizar stock
+      for (const item of state.cart) {
+        const prod = state.productos.find(p => p.id === item.id);
+        if (prod) await SB.from('productos').update({ stock: prod.stock - item.qty }).eq('id', item.id);
+      }
+      // Actualizar deuda si es fiado
+      if (cliente) {
+        const nuevaDeuda = (cliente.deuda||0) + total;
+        await SB.from('clientes').update({ deuda: nuevaDeuda }).eq('id', cliente.id);
+        const c = state.clientes.find(x => x.id == cliente.id);
+        if (c) c.deuda = nuevaDeuda;
+      }
+    }
+  } else {
+    state.pendingSync.push({ type: 'venta', data: { ...ventaData, items } });
+    savePending();
+    // Actualizar localmente
+    state.cart.forEach(item => {
+      const p = state.productos.find(x => x.id === item.id);
+      if (p) p.stock -= item.qty;
+    });
+    if (cliente) {
+      const c = state.clientes.find(x => x.id == cliente.id);
+      if (c) c.deuda = (c.deuda||0) + total;
+    }
+  }
+
+  // Mostrar recibo
+  const reciboData = {
+    items: state.cart.map(i => ({ nombre: i.nombre, qty: i.qty, precio: i.precio })),
+    total,
+    metodo: state.metodoPago,
+    clienteNombre: cliente?.nombre || null,
+    clienteTel: cliente?.telefono || null,
+  };
+
+  state.cart = [];
+  state.metodoPago = null;
+  state.clienteSeleccionado = null;
+  await loadAll();
+  state.modal = { type: 'recibo', data: reciboData };
+  render();
+}
+
+// ═══════════════ INIT ═══════════════
+render();
+</script>
+</body>
+</html>
